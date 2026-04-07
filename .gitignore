@@ -20,6 +20,17 @@ wheels/
 .installed.cfg
 *.egg
 
+# Latex Report
+report/*.aux
+report/*.log
+report/*.out
+report/*.toc
+report/*.lof
+report/*.lot
+report/*.fls
+report/*.fdb_latexmk
+report/*.synctex.gz
+
 # Virtual environments
 venv/
 ENV/

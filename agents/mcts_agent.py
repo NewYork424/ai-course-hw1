@@ -5,7 +5,8 @@ MCTS (蒙特卡洛树搜索) 智能体模板。
 参考：《深度学习与围棋》第 4 章
 """
 
-from random import random
+import math
+import random as rd
 
 from dlgo.gotypes import Player, Point
 from dlgo.goboard import GameState, Move
@@ -35,6 +36,7 @@ class MCTSNode:
         self.visit_count = 0
         self.value_sum = 0
         self.prior = prior
+        # TODO: 初始化其他必要属性
 
     @property
     def value(self):
@@ -63,23 +65,27 @@ class MCTSNode:
             最佳子节点
         """
         # TODO: 实现 UCT 选择
-        import math
-        import random
         best_children = []
         best_uct = float('-inf')
+        
+        # 预计算父节点访问次数的对数，避免在循环中重复计算
+        log_parent_visits = math.log(self.visit_count) if self.visit_count > 0 else 0
+        
         for child in self.children:
+            # 处理访问次数为零的情况，保证新节点优先被访问
             if child.visit_count == 0:
                 uct = float('inf')
             else:
-                uct = child.value + c * math.sqrt(math.log(self.visit_count) / child.visit_count)
+                uct = child.value + c * math.sqrt(log_parent_visits / child.visit_count)
             
             if uct > best_uct:
                 best_uct = uct
                 best_children = [child]
+            # 允许多个同等最优的子节点随机选择
             elif uct == best_uct:
                 best_children.append(child)
                 
-        return random.choice(best_children) if best_children else None
+        return rd.choice(best_children) if best_children else None
 
     def expand(self):
         """
@@ -90,7 +96,14 @@ class MCTSNode:
         """
         # TODO: 实现节点展开
         moves = self.game_state.legal_moves()
-        for move in moves:
+        
+        # 核心优化：过滤掉毫无意义的 认输(Resign) 和提前 过子(Pass)
+        # 否则 MCTS 很可能因为乱序模拟被带偏，而在开局主动选择过子
+        play_moves = [m for m in moves if m.is_play]
+        if not play_moves:
+            play_moves = [Move.pass_turn()]
+            
+        for move in play_moves:
             next_state = self.game_state.apply_move(move)
             child_node = MCTSNode(next_state, parent=self)
             self.children.append(child_node)
@@ -105,8 +118,15 @@ class MCTSNode:
         # TODO: 实现反向传播
         self.value_sum += value
         self.visit_count += 1
-        if self.parent:
-            self.parent.backup(1.0 - value)  # 反向传播给对手视角的结果
+        
+        # 迭代更新反向传播
+        node = self.parent
+        current_value = 1.0 - value
+        while node is not None:
+            node.value_sum += current_value
+            node.visit_count += 1
+            node = node.parent
+            current_value = 1.0 - current_value
 
 
 class MCTSAgent:
@@ -153,8 +173,7 @@ class MCTSAgent:
                 if node.visit_count > 0:
                     node.expand()
                     if node.children:
-                        import random
-                        node = random.choice(node.children)
+                        node = rd.choice(node.children)
 
             value = self._simulate(node.game_state)
             node.backup(value)
@@ -175,45 +194,53 @@ class MCTSAgent:
             game_state: 起始局面
 
         Returns:
-            从当前玩家视角的结果（1=胜，0=负，0.5=和）
+            从当前玩家视角的结果(1=胜, 0=负, 0.5=和）
         """
-        import random
+        # TODO: 实现快速模拟（含两种优化策略）
         from dlgo.scoring import compute_game_result
 
         current_state = game_state
-        # 修正：我们需要返回“刚刚落子那一方”（即导致这个状态的玩家）的胜负结果。
-        # 原来等于 current_state.next_player，这会导致最大化对手的胜率，从而疯狂选择认输这种给对手机会的步主。
         player = current_state.next_player.other
 
-        # 优化2：限制模拟深度（例如最多走30步），防止模拟时间过长
-        MAX_DEPTH = 60
+        # 限制模拟深度
+        MAX_DEPTH = 150 # 数字越大模拟越深入，但越慢
         depth = 0
 
         while not current_state.is_over() and depth < MAX_DEPTH:
             moves = list(current_state.legal_moves())
-            if not moves:
-                break
+            # 过滤不良下子选择
+            play_moves = [m for m in moves if m.is_play]
             
-            # 优化1：启发式走子。这里只做一个简单的避免立即自杀并倾向占星/小目的走子。
-            # 为了效率，我们随机挑选一部分走法进行启发式判定
+            if not play_moves:
+                current_state = current_state.apply_move(Move.pass_turn())
+                depth += 1
+                continue
+            
+            # 启发式走子：优先选择周围有敌方棋子的点（即制造接触战或防守）
             chosen_move = None
-            random.shuffle(moves)
-            for move in moves[:10]:
-                if move.is_play:
-                    next_state = current_state.apply_move(move)
-                    go_string = next_state.board.get_go_string(move.point)
-                    if go_string is not None and go_string.num_liberties > 1:
-                        chosen_move = move
-                        break
+            rd.shuffle(play_moves)
+            for move in play_moves[:10]:
+                point = move.point
+                is_contact_move = False
+                for r, c in [(point.row+1, point.col), (point.row-1, point.col), 
+                             (point.row, point.col+1), (point.row, point.col-1)]:
+                    neighbor = Point(r, c)
+                    if current_state.board.is_on_grid(neighbor):
+                        neighbor_color = current_state.board.get(neighbor)
+                        if neighbor_color == current_state.next_player.other:
+                            is_contact_move = True
+                            break
+                if is_contact_move:
+                    chosen_move = move
+                    break
             
             if chosen_move is None:
-                chosen_move = moves[0]
+                chosen_move = play_moves[0]
             
             current_state = current_state.apply_move(chosen_move)
             depth += 1
 
-        # 计算得分：调用 score 或直接看谁赢
-        # 由于有可能深度限制没打完，所以这里我们通过此时的盘面得分粗略判断
+        # 计算得分
         game_result = compute_game_result(current_state)
         if game_result.winner == player:
             return 1.0
@@ -233,5 +260,7 @@ class MCTSAgent:
             最佳棋步
         """
         # TODO: 根据访问次数或价值选择
+        if not root.children:
+            return Move.pass_turn()
         best_child = max(root.children, key=lambda c: c.visit_count)
         return best_child.game_state.last_move

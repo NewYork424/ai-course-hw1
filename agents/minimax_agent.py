@@ -9,6 +9,7 @@
 
 from dlgo.gotypes import Player, Point
 from dlgo.goboard import GameState, Move
+from dlgo import scoring
 
 __all__ = ["MinimaxAgent"]
 
@@ -39,6 +40,7 @@ class MinimaxAgent:
         Returns:
             选定的棋步
         """
+        # TODO: 实现 Minimax 搜索，调用 minimax 或 alphabeta
         best_value = -float('inf')
         best_move = None
         
@@ -46,7 +48,6 @@ class MinimaxAgent:
         
         # 优先选择可以下的位置
         moves = self._get_ordered_moves(game_state)
-        
         if not moves:
             return Move.pass_turn()
 
@@ -78,6 +79,11 @@ class MinimaxAgent:
         Returns:
             该局面的评估值
         """
+        # TODO: 实现 Minimax
+        # 提示：
+        # 1. 终局或 depth=0 时返回评估值
+        # 2. 如果是最大化方：取所有子节点最大值
+        # 3. 如果是最小化方：取所有子节点最小值
         if depth == 0 or game_state.is_over():
             return self.evaluator(game_state)
             
@@ -114,6 +120,10 @@ class MinimaxAgent:
         Returns:
             该局面的评估值
         """
+        # TODO: 实现 Alpha-Beta 剪枝
+        # 提示：在 minimax 基础上添加剪枝逻辑
+        # - 最大化方：如果 value >= beta 则剪枝
+        # - 最小化方：如果 value <= alpha 则剪枝
         if depth == 0 or game_state.is_over():
             return self.evaluator(game_state)
             
@@ -176,9 +186,21 @@ class MinimaxAgent:
 
     def _default_evaluator(self, game_state):
         """
-        默认局面评估函数（加入气数评估）。
+        默认局面评估函数（简单版本）。
+
+        学生作业：替换为更复杂的评估函数，如：
+            - 气数统计
+            - 眼位识别
+            - 神经网络评估
+
+        Args:
+            game_state: 游戏状态
+
+        Returns:
+            评估值（正数对我方有利）
         """
-        from dlgo import scoring
+        # TODO: 实现简单的启发式评估
+        # 示例：子数差 + 气数差
         territory = scoring.evaluate_territory(game_state.board)
         b_stones = territory.num_black_stones
         w_stones = territory.num_white_stones
@@ -209,7 +231,7 @@ class MinimaxAgent:
                     else:
                         opponent_liberties += go_string.num_liberties
         
-        # 棋子数量作为主要指标（权重10），气数作为次要指标（权重1）
+        # 棋子数量作为主要指标（权重10），气数作为次要指标（权重1），驱动多吃子和少被吃的策略
         score = (my_stones - opponent_stones) * 10 + (my_liberties - opponent_liberties)
         
         return score
@@ -226,6 +248,8 @@ class MinimaxAgent:
         Returns:
             按启发式排序的棋步列表
         """
+        # TODO: 实现棋步排序
+        # 提示：优先检查吃子、提子、连络等好棋
         moves = game_state.legal_moves()
         if not moves:
             return []
@@ -281,6 +305,7 @@ class GameResultCache:
             value: 评估值
             flag: 'exact'/'lower'/'upper'（精确值/下界/上界）
         """
+        # TODO: 实现缓存逻辑（考虑深度优先替换策略）
         # 深度优先替换策略：仅在更深时覆盖
         existing = self.cache.get(zobrist_hash)
         if existing is None or existing['depth'] < depth:

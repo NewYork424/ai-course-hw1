@@ -1,0 +1,115 @@
+\documentclass[12pt,a4paper,UTF8]{ctexart}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{minted}
+\usepackage{amsmath}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{hyperref}
+
+\geometry{left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm}
+
+\title{项目一：围棋 AI}
+\author{聂溢 \quad 2023010998}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{概述}
+这个作业主要是在小棋盘上实现了一个简单的围棋 AI，项目源码见：\href{https://github.com/NewYork424/ai-course-hw1.git}{github: ai-course-hw1}。
+完成三种策略的实现：随机、蒙特卡洛树搜索（MCTS），以及 Minimax 算法（加了 Alpha-Beta 剪枝和置换表缓存）。
+同时在AI的帮助下完成了相应的可视化界面。
+通过在5*5和6*6两种大小的棋盘上测试了不同策略的对战结果，验证策略有效性。
+
+\section{算法设计与实现细节}
+
+\subsection{随机 AI}
+随机 AI 非常简单，就是把当前能下的位置（包括过子和认输）全找出来，然后用 \texttt{random.choice()} 随便挑一个去下。写这个主要是为了测试基础的围棋规则代码有没有写对，不用来打比赛。
+
+\subsection{蒙特卡洛树搜索（MCTS）细节与避坑}
+在 MCTS 选择、扩展、模拟、回溯的标准结构基础上，我主要优化了避坑和底层落子决策。
+其中要注意如果子节点第一次被访问到，UBT会有除以0的情况，所以我让它直接返回一个很大的数，保证这个节点会被优先访问到。同时允许多个同等最优决策随机选择
+\begin{itemize}
+    \item \textbf{过滤过子投降步}：因为过子、认输都是合法走法，但是对于MCTS这样基于采样的方法而言，认输和过子会带来虚假的局势信息。所以除非真的没别的走法了才会开放这两个选择。
+    \item \textbf{启发式判断走步}：我优先找“挨着对方棋子”的位置下棋，也就是让程序多在有冲突的地方下棋（接触战），而不是在空地乱点，在中后期更有优势。
+    \item \textbf{限制模拟深度}：我限制最多模拟 60 步。反之直接看盘面上谁的得分更高，这样能省下不少时间。
+\end{itemize}
+
+\subsection{Minimax 与 Alpha-Beta 剪枝选做方案}
+在选做题部分，我实现了 Minimax 算法及 Alpha-Beta 剪枝和置换表缓存：
+\begin{itemize}
+    \item \textbf{局面评估}：写了一个简单的评估函数，算的是“（自己的棋子数 - 对面的棋子数）乘 10 + （自己的总气数 - 对面的总气数）”。主要就是让程序优先考虑吃对面的子。
+    \item \textbf{Alpha-Beta 剪枝与排序}：为了让搜索快一点，加了剪枝逻辑。我还让代码优先去搜那些能马上吃子或者能给自己长气的走法，这样能提前剪掉很多不需要看的搜索分支。
+    \item \textbf{置换表}：对搜索过的棋盘局面存到了一个字典里，下次遇到可以直接查表。但是同样的棋盘轮到黑棋下和白棋下是不一样的，所以我把“当前轮到谁下棋”这个信息也放进了查表的 key 里面，防止程序算错分数。
+\end{itemize}
+
+\section{实验结果与算法对比分析}
+
+\subsection{批量测试表现}
+基于 \texttt{play.py}，为了批量测试，我借助AI写了\texttt{benchmark.py}脚本。
+针对 $5 \times 5$ 和 $6 \times 6$ 两种棋盘，我对 12 种策略先后手的组合分别进行了各 20 局的自动对战模拟，数据如下：
+\begin{table}[H]
+    \centering
+    \resizebox{\textwidth}{!}{
+    \begin{tabular}{lllccccc}
+        \toprule
+        \textbf{棋盘大小} & \textbf{黑方 (P1)} & \textbf{白方 (P2)} & \textbf{黑方胜场} & \textbf{白方胜场} & \textbf{平局} & \textbf{平均步数} & \textbf{平均用时(秒)} \\
+        \midrule
+        $5 \times 5$ & MCTS & Random & 20 & 0 & 0 & 19.1 & 25.16s \\
+        $5 \times 5$ & Random & MCTS & 1 & 19 & 0 & 24.6 & 33.62s \\
+        $5 \times 5$ & Minimax & Random & 20 & 0 & 0 & 19.9 & 1.25s \\
+        $5 \times 5$ & Random & Minimax & 2 & 18 & 0 & 20.7 & 1.03s \\
+        $5 \times 5$ & Minimax & MCTS & 20 & 0 & 0 & 47.0 & 72.17s \\
+        $5 \times 5$ & MCTS & Minimax & 1 & 18 & 1 & 47.0 & 71.18s \\
+        \midrule
+        $6 \times 6$ & MCTS & Random & 20 & 0 & 0 & 32.2 & 58.96s \\
+        $6 \times 6$ & Random & MCTS & 1 & 19 & 0 & 38.2 & 73.61s \\
+        $6 \times 6$ & Minimax & Random & 19 & 1 & 0 & 29.1 & 4.92s \\
+        $6 \times 6$ & Random & Minimax & 1 & 19 & 0 & 25.1 & 3.97s \\
+        $6 \times 6$ & Minimax & MCTS & 19 & 1 & 0 & 66.8 & 124.57s \\
+        $6 \times 6$ & MCTS & Minimax & 2 & 17 & 1 & 66.2 & 134.44s \\
+        \bottomrule
+    \end{tabular}
+    }
+    \caption{算法对战实地运行数据（全由脚本连续 20 局采集）}
+\end{table}
+
+\textbf{表现分析}：
+\begin{itemize}
+    \item 随机 AI 显然是最差的。
+    但是对于较小的棋盘，不同方法的差距并不能显著拉开。
+    \item MCTS 加了简单的启发规则后，能看出来怎么包围对手或者保住自己的棋。
+    但是由于棋盘太小，采样的方法不够稳定，比不上直接算出最优的 Minimax，且有时输给随机 AI。
+    \item Minimax 在这里表现非常好。
+    因为小棋盘上可以容易算出局部最优，加上剪枝优化后计算也很快。
+    对小棋盘仅看 3 步的话，Minimax 可以看到局势的未来走向。
+\end{itemize}
+
+\section{图形化界面设计}
+借助AI我在 \texttt{gui.py} 里写了个简单的图形界面，用来让人和程序下棋。
+界面画出了棋盘的网格和落子的黑白效果，可以让人点鼠标下棋，没气不让下的地方也点不了。
+轮到程序下的时候，程序会阻塞进程等待代码算完结果。
+
+\section{与 AlphaGo / AlphaZero 的对比与思考}
+通过这次自己实现 MCTS 和 Minimax，我深刻体会到了传统树搜索在围棋这个量级问题上碰到的算力问题，而且人类设计评估规则（算气、算子）过于死板的问题。
+
+相比之下，Alpha 系列做出了两次极其优雅的技术破局点：
+\begin{enumerate}
+    \item \textbf{策略网络的聚焦性}：
+    对于 19*19 的超大围棋棋盘，走法数量巨大，传统搜索时间无法承受。
+    而 AlphaGo 在这一层引入了前馈策略网络，不用往下算，直接给各个落子点一个先验的胜率预测进行高效剪枝。
+    \item \textbf{价值网络评估的轻量性}：
+    在这份作业里，我为了让 MCTS 获取胜率，必须得一路随机下到终局（耗时且信噪比低）；
+    让 Minimax 算分，只能强制采用“棋数+气数”的人工规则（太粗糙僵硬）。
+    AlphaGo 则用价值网络，在树搜索到一半时，直接靠神经网络判定局势信息。
+    \item \textbf{AlphaZero 的无监督自我对弈}：
+    从 AlphaGo 到 AlphaZero 就是彻底去掉了人类经验的影响。
+    我们的这些“接触战优先”、“提子优先”启发，都是有限的先验知识，不能应对复杂局势。
+    而 AlphaZero 完全靠自我对弈生成数据，学习更有利的下法，所以能打破“人类定式”。
+\end{enumerate}
+
+综上体验，人的先验知识很难充分应对复杂的棋盘局势。
+应该通过学习的方式，让系统自己发现合适的走法，这可能是极其复杂且隐性的。
+
+\end{document}  
